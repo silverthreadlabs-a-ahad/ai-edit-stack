@@ -1,0 +1,3 @@
+@echo off
+rem Run the AI Edit Stack CLI from any folder:  E:\AI-Edit_stack\aes.cmd <command> ...
+uv run --project "%~dp0." aes %*

@@ -1,0 +1,14 @@
+.venv/
+__pycache__/
+cache/
+inbox/
+exports/
+projects/*/hf/assets/
+projects/*/hf/node_modules/
+projects/*/hf/.hyperframes/
+projects/*/renders/
+projects/*/framesheet_raw/
+library/**/*.mp3
+library/**/*.wav
+projects/*
+!projects/.gitkeep

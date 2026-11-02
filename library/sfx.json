@@ -1,0 +1,79 @@
+[
+  {
+    "file": "sfx/click/click-soft.mp3",
+    "mtime": 1793610492290362800,
+    "title": "click-soft",
+    "role": "click",
+    "license": "own/unknown",
+    "attribution": null,
+    "tags": [],
+    "duration": 0.366,
+    "peak": 0.051
+  },
+  {
+    "file": "sfx/click/typing.mp3",
+    "mtime": 1793610492314710600,
+    "title": "typing",
+    "role": "click",
+    "license": "own/unknown",
+    "attribution": null,
+    "tags": [],
+    "duration": 1.5,
+    "peak": 0.455
+  },
+  {
+    "file": "sfx/impact/impact-bass-1.mp3",
+    "mtime": 1793610492255604200,
+    "title": "impact-bass-1",
+    "role": "impact",
+    "license": "own/unknown",
+    "attribution": null,
+    "tags": [],
+    "duration": 2.116,
+    "peak": 0.073
+  },
+  {
+    "file": "sfx/pop/pop.mp3",
+    "mtime": 1793610492215394800,
+    "title": "pop",
+    "role": "pop",
+    "license": "own/unknown",
+    "attribution": null,
+    "tags": [],
+    "duration": 0.72,
+    "peak": 0.119
+  },
+  {
+    "file": "sfx/whoosh/whoosh-cinematic.mp3",
+    "mtime": 1793610492155669000,
+    "title": "whoosh-cinematic",
+    "role": "whoosh",
+    "license": "own/unknown",
+    "attribution": null,
+    "tags": [],
+    "duration": 5.544,
+    "peak": 2.502
+  },
+  {
+    "file": "sfx/whoosh/whoosh-short.mp3",
+    "mtime": 1793610492121400600,
+    "title": "whoosh-short",
+    "role": "whoosh",
+    "license": "own/unknown",
+    "attribution": null,
+    "tags": [],
+    "duration": 0.575,
+    "peak": 0.161
+  },
+  {
+    "file": "sfx/whoosh/whoosh.mp3",
+    "mtime": 1793610492104717600,
+    "title": "whoosh",
+    "role": "whoosh",
+    "license": "own/unknown",
+    "attribution": null,
+    "tags": [],
+    "duration": 0.575,
+    "peak": 0.161
+  }
+]

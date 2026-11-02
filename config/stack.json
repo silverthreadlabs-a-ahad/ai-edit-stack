@@ -1,0 +1,72 @@
+{
+  "paths": {
+    "inbox": "inbox",
+    "cache": "cache",
+    "library": "library",
+    "projects": "projects",
+    "exports": "exports",
+    "brands": "brands",
+    "hf_frames_cache": "E:/hf-cache"
+  },
+  "hyperframes": {
+    "npx_package": "hyperframes@0.9.1"
+  },
+  "whisper": {
+    "model": "medium",
+    "model_cpu": "small",
+    "device": "auto",
+    "compute_type_gpu": "float16",
+    "compute_type_cpu": "int8",
+    "language": null,
+    "beam_size": 5
+  },
+  "scenes": {
+    "threshold": 27.0,
+    "min_scene_sec": 0.8,
+    "frame_skip": 1,
+    "max_broll_unit_sec": 6.0
+  },
+  "quality": {
+    "sharp_min": 25,
+    "bright_min": 35,
+    "bright_max": 225,
+    "filler_words": ["um", "uh", "erm", "uhm", "hmm", "ah", "eh", "umm", "uhh"],
+    "retake_similarity": 0.72
+  },
+  "modes": {
+    "quick": {
+      "max_broll_candidates": 15,
+      "describe_speech_units": false,
+      "beat_sheet_stop": false,
+      "review_passes": 1,
+      "custom_animation": "none",
+      "framesheet_max_frames": 9
+    },
+    "standard": {
+      "max_broll_candidates": 25,
+      "describe_speech_units": false,
+      "beat_sheet_stop": true,
+      "review_passes": 2,
+      "custom_animation": "light",
+      "framesheet_max_frames": 12
+    },
+    "premium": {
+      "max_broll_candidates": 40,
+      "describe_speech_units": true,
+      "beat_sheet_stop": true,
+      "review_passes": 2,
+      "custom_animation": "full",
+      "framesheet_max_frames": 16
+    }
+  },
+  "limits": {
+    "max_fix_retries": 2,
+    "beat_snap_window_sec": 0.25,
+    "parallel_encodes": 2
+  },
+  "render": {
+    "use_nvenc": true,
+    "precut_crf": 16,
+    "default_quality": "delivery"
+  }
+}

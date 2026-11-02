@@ -1,0 +1,41 @@
+{
+  "name": "default",
+  "description": "Neutral starter brand. Copy this file to brands/<your-brand>.json and edit.",
+  "canvas": { "width": 1080, "height": 1920, "fps": 30 },
+  "render_resolution": null,
+  "fonts_css": "https://fonts.googleapis.com/css2?family=Inter:wght@700;800&family=Instrument+Serif:ital@0;1&display=swap",
+  "colors": { "ground": "#000000", "ink": "#ffffff", "accent": "#ffd400" },
+  "caption": {
+    "font": "'Inter', sans-serif",
+    "weight": 800,
+    "size": 78,
+    "uppercase": true,
+    "y_normal": 1240,
+    "y_low": 1380,
+    "y_top": 330,
+    "max_words": 3,
+    "shadow": "0 2px 3px rgba(0,0,0,.6)",
+    "accent_style": "color",
+    "serif_accent_font": "'Instrument Serif', serif",
+    "pop": { "from_scale": 0.85, "from_y": 12, "duration": 0.1, "ease": "back.out(2)" },
+    "fade_out": false
+  },
+  "kinetic": { "font": "'Inter', sans-serif", "weight": 800, "size": 140, "y": 420 },
+  "audio": {
+    "voice_volume": 1.0,
+    "music_volume": 0.38,
+    "music_gap_boost": 1.5,
+    "sfx_volume": 0.5,
+    "target_lufs": -14,
+    "true_peak": -1.5,
+    "voice_enhance": true
+  },
+  "outro": null,
+  "safe": { "top": 250, "bottom": 1650 },
+  "exports_dir": null,
+  "rules": [
+    "Never place text over a face.",
+    "Use at most 2-3 transition types per video.",
+    "Hook in the first 1.5 seconds."
+  ]
+}

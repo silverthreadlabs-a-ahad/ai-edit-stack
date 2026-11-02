@@ -1,0 +1,55 @@
+{
+  "name": "rava",
+  "description": "Rava Productions reels. Approved look: E:\\rava-edit\\rava-reel-10 .. 12.",
+  "canvas": { "width": 1080, "height": 1920, "fps": 30 },
+  "render_resolution": "portrait-4k",
+  "fonts_css": "https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@500;700&family=Instrument+Serif:ital@0;1&display=swap",
+  "colors": { "ground": "#000000", "ink": "#ffffff", "accent": "#e3262c" },
+  "caption": {
+    "font": "'Syne', sans-serif",
+    "weight": 800,
+    "size": 80,
+    "uppercase": true,
+    "y_normal": 1240,
+    "y_low": 1380,
+    "y_top": 330,
+    "max_words": 3,
+    "shadow": "0 2px 3px rgba(0,0,0,.6)",
+    "accent_style": "underline",
+    "serif_accent_font": "'Instrument Serif', serif",
+    "pop": { "from_scale": 0.82, "from_y": 14, "duration": 0.12, "ease": "back.out(2)" },
+    "fade_out": false
+  },
+  "kinetic": { "font": "'Instrument Serif', serif", "weight": 400, "size": 170, "y": 420, "italic": true },
+  "audio": {
+    "voice_volume": 1.0,
+    "music_volume": 0.38,
+    "music_gap_boost": 1.5,
+    "sfx_volume": 0.5,
+    "target_lufs": -15,
+    "true_peak": -1.5,
+    "voice_enhance": true
+  },
+  "outro": {
+    "file": "C:/Users/Fassih Haider - STL/Downloads/rava-outro_d-mark_v02-breath.mp4",
+    "skip_first_frame": false,
+    "hold_last_sec": 0.0,
+    "crossfade_sec": 0.25,
+    "music_through": false,
+    "music_fade_out_sec": 1.0
+  },
+  "safe": { "top": 250, "bottom": 1650 },
+  "exports_dir": "E:/rava-edit/final-renders",
+  "rules": [
+    "No '01 / SCRIPT'-style counter labels.",
+    "Never place captions over the face; above or below it depending on framing.",
+    "The word 'Rava' stays white, never red.",
+    "Ending moves smoothly: no zoom pop on the CTA; masked-rise + red underline ending, no boxed caption.",
+    "No motion-graphic end card; cut from the closing line into the outro with a 0.25s crossfade.",
+    "No film grain. No dark glass panel cards at the top.",
+    "Graphics language: big kinetic words above the head, highlight bar behind a word, huge red/green italic serif, thin arrow-line labels, loupe zoom on real details.",
+    "Grade: bright mids and faces, clean deep blacks; never lift the black point. Light vignette only.",
+    "The CTA ('DM us now') lands last before the outro, even if spoken mid-take.",
+    "Deliver at portrait-4k with -q delivery; render one 4K job at a time."
+  ]
+}

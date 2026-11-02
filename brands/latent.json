@@ -1,0 +1,53 @@
+{
+  "name": "latent",
+  "description": "Latent (latentpowered.com) reels. Source: Downloads\\brand (BRAND.md, web/latent-brand.css, reel-type.png).",
+  "canvas": { "width": 1080, "height": 1920, "fps": 30 },
+  "render_resolution": null,
+  "fonts_css": "https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,800&family=Instrument+Serif:ital@0;1&display=swap",
+  "colors": { "ground": "#000000", "ink": "#ffffff", "accent": "#fa4c14", "card": "#0a0d12", "line": "#3a485b" },
+  "caption": {
+    "font": "'Bricolage Grotesque', sans-serif",
+    "weight": 800,
+    "size": 84,
+    "uppercase": true,
+    "y_normal": 1240,
+    "y_low": 1380,
+    "y_top": 330,
+    "max_words": 3,
+    "shadow": "0 2px 3px rgba(0,0,0,.6)",
+    "accent_style": "color",
+    "serif_accent_font": "'Instrument Serif', serif",
+    "pop": { "from_scale": 0.82, "from_y": 14, "duration": 0.1, "ease": "back.out(2)" },
+    "fade_out": false
+  },
+  "kinetic": { "font": "'Bricolage Grotesque', sans-serif", "weight": 800, "size": 150, "y": 420 },
+  "audio": {
+    "voice_volume": 1.25,
+    "music_volume": 0.38,
+    "music_gap_boost": 1.5,
+    "sfx_volume": 0.5,
+    "target_lufs": -13,
+    "true_peak": -1.5,
+    "voice_enhance": true
+  },
+  "outro": {
+    "file": "C:/Users/Fassih Haider - STL/Downloads/brand/media/video/latent-outro_var1.mp4",
+    "skip_first_frame": true,
+    "hold_last_sec": 2.0,
+    "crossfade_sec": 0.0,
+    "music_through": true,
+    "music_fade_out_sec": 2.0
+  },
+  "safe": { "top": 250, "bottom": 1650 },
+  "exports_dir": "E:/Latent exports",
+  "rules": [
+    "Dark only: #000 ground. No white boards, pill badges, chips or fake buttons.",
+    "Captions: Bricolage Grotesque 800 caps 84px, one Instrument Serif italic accent word, one orange #fa4c14 word. Pop in, no fade-out, no text stroke.",
+    "All on-screen text sits in the single caption spot mid-chest (y ~1240, ~1380 when the speaker is framed low). Never on the face.",
+    "Graphics go at the TOP of the frame below the 250px app bar; push the camera down/in (scale ~1.18, y +140) so the face stays clear.",
+    "Center-align everything. No blur on text or cards. No cards left tilted in 3D.",
+    "Few full-screen graphic slides; prefer animated graphics over the footage.",
+    "The pinecone appears only in the outro. Music runs through the outro and its 2s hold with a ~2s fade-out.",
+    "Voice must be loud: about -11.5 LUFS voice, final reel around -13 LUFS."
+  ]
+}
