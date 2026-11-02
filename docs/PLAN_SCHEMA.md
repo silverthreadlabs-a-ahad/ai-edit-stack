@@ -33,13 +33,14 @@ HyperFrames composition. Every field except `shots` is optional.
 | `caption_text` | none | replaces the caption words (romanized Hindi/Urdu, spelling fixes); re-timed over the spoken span |
 | `emphasis` | [] | caption words styled with the brand accent (colour, underline or serif) |
 | `reframe_x` | face x | horizontal crop centre (0-1) when the source is wider than the canvas |
+| `cover` | [] | b-roll laid over this shot while its voice keeps playing: `[{"unit", "at" (s from shot start), "dur", "in" (source s, default unit start), "zoom": slow|punch|none, "reframe_x"}]`. Muted; pre-cut at render. |
 
 Captions are placed automatically in the brand's caption spot and moved below or above the face when
 the detected face would collide (`y_normal`, `y_low`, `y_top` in the brand).
 
 ## hook / texts[]
 Big kinetic text (brand `kinetic` style). `at` and `dur` in timeline seconds, `y` = top in px.
-`sfx` = a library role (`impact`, `pop`, `swoosh-text`, `riser`, `none`). The hook always starts at 0.
+`color` = text colour (e.g. red/green accent). `sfx` = a library role (`impact`, `pop`, `swoosh-text`, `riser`, `none`). The hook always starts at 0.
 
 ## music
 `file` relative to `library/` (from `aes library suggest`). `start` = offset into the track (use its
@@ -54,3 +55,34 @@ cut). `"none"`: no SFX. Or an explicit list: `[{"at": 4.1, "role": "pop"}, {"at"
 
 ## outro
 `true` appends the brand outro (crossfade / last-frame hold per brand). `false` skips it.
+
+## graphics[] (reusable blocks, no hand-written code)
+Each block is placed with `at` (timeline s) or `at_word` (+ `shot` 1-based, `nth`, `offset`, `edge: "end"`),
+so it locks to the spoken word. Optional `dur`, `y`, and `sfx` (role or `"none"`; defaults below,
+short variants preferred). Sound effects within 0.15 s of another are skipped automatically.
+
+| type | fields | default sfx |
+| --- | --- | --- |
+| `badge` | `icon` (`x` / `check`), `text` | pop |
+| `arrow_label` | `text`, `path` [[x,y],...] (ends at the dot), `label` [x,y] | whoosh |
+| `highlight_word` | `text`, `color` (bar) | pop |
+| `phone_reels` | `units` [gid...], `in` [source s...], `tag`; white cut-away, captions turn dark | whoosh |
+| `gag` | `target` {shot, cover} or element id, `effects` [{fx: dark/blur/bw/pop, at_word}] | none |
+| `cta` | `lines` [...], `underline` (default true); auto-fits the width; runs to the end of the body | whoosh |
+
+```json
+"graphics": [
+  {"type": "badge", "icon": "x", "text": "Label", "at_word": "photo", "shot": 2, "dur": 1.9},
+  {"type": "gag", "target": {"shot": 2, "cover": 3}, "effects": [{"fx": "dark", "at_word": "dark"}, {"fx": "blur", "at_word": "blurry"}]},
+  {"type": "cta", "lines": ["Your call", "to action"], "at_word": "today", "shot": 5}
+]
+```
+
+## brand (per-plan overrides)
+Any brand field can be overridden for one video, e.g.
+`"brand": {"caption": {"font": "'Montserrat', sans-serif", "active_word": true, "accent_style": "color"}}`.
+`caption.active_word` = word-by-word highlight.
+
+## custom files
+For graphics no block covers, write `custom.css`, `custom.html`, `custom.js` in the project folder.
+The build reads them directly (they override the CUSTOM markers in hf/index.html).

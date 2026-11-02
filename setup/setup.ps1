@@ -28,7 +28,7 @@ if (-not $ok) { Write-Host "Install the missing tools above, open a new terminal
 # Python 3.12 venv + dependencies (GPU extras when an NVIDIA GPU is present)
 $gpu = [bool](Get-Command nvidia-smi -ErrorAction SilentlyContinue)
 Write-Host "Creating Python 3.12 environment (gpu=$gpu)..." -ForegroundColor Cyan
-if ($gpu) { uv sync --extra gpu } else { uv sync }
+if ($gpu) { uv sync --extra gpu --extra ml } else { uv sync --extra ml }
 if ($LASTEXITCODE -ne 0) { Write-Host "uv sync failed" -ForegroundColor Red; exit 1 }
 
 # HyperFrames CLI (pinned; npx caches it)

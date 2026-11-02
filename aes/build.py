@@ -15,6 +15,8 @@ import re
 import subprocess
 from pathlib import Path
 
+from .blocks import block_css, norm, render_blocks
+from .faces import boxes_between, face_track
 from .project import load_units
 from .util import (die, fmt_t, info, link_or_copy, load_brand, npx_hf, path_of, project_dir,
                    read_json, slug, step_log, write_json)
@@ -86,6 +88,14 @@ def build(name: str) -> None:
         die(f"No plan.json in {d}. The editor writes it (see docs/PLAN_SCHEMA.md).")
     plan = read_json(d / "plan.json")
     brand = load_brand(pj["brand"])
+
+    def _merge(a, b):
+        for k, v in b.items():
+            if isinstance(v, dict) and isinstance(a.get(k), dict):
+                _merge(a[k], v)
+            else:
+                a[k] = v
+    _merge(brand, plan.get("brand", {}))
     W, H, FPS = brand["canvas"]["width"], brand["canvas"]["height"], brand["canvas"]["fps"]
     cap = brand["caption"]
     aud = brand["audio"]
@@ -96,6 +106,10 @@ def build(name: str) -> None:
         hf.mkdir(exist_ok=True)
         _ensure_hf_project(hf, brand)
         custom = _custom_blocks(hf / "index.html")
+        for k, ext in (("css", "css"), ("html", "html"), ("js", "js")):
+            f = d / f"custom.{ext}"
+            if f.exists():
+                custom[k] = f.read_text(encoding="utf-8").rstrip()
 
         # ---- resolve shots
         shots = []
@@ -114,7 +128,13 @@ def build(name: str) -> None:
             shots.append({"i": i, "unit": u, "t0": t0, "t1": t1, "transition": tr if i else "cut",
                           "zoom": s.get("zoom", "none"), "caption": s.get("caption", True),
                           "emphasis": [w.lower() for w in s.get("emphasis", [])],
-                          "reframe_x": s.get("reframe_x"), "caption_text": s.get("caption_text")})
+                          "reframe_x": s.get("reframe_x"), "caption_text": s.get("caption_text"),
+                          "cover": s.get("cover", []), "key_t": (t0, t1)})
+            for j, cv in enumerate(shots[-1]["cover"]):
+                cu = units.get(cv["unit"])
+                if not cu:
+                    die(f"plan.json shot {i + 1} cover {j + 1}: unknown unit '{cv['unit']}'")
+                cv["_u"] = cu
         if not shots:
             die("plan.json has no shots")
 
@@ -183,6 +203,12 @@ def build(name: str) -> None:
         # ---- assets
         assets = hf / "assets"
         src_map = {}
+        for u in [cv["_u"] for sh in shots for cv in sh["cover"]]:
+            src = Path(u["source"])
+            rel = f"assets/src/{u['alias']}{src.suffix.lower()}"
+            if rel not in src_map.values():
+                link_or_copy(src, hf / rel)
+            src_map[u["alias"]] = rel
         for sh in shots:
             u = sh["unit"]
             src = Path(u["source"])
@@ -198,14 +224,114 @@ def build(name: str) -> None:
         sfx_used: dict[str, int] = {}
         sfx_events = []
 
-        def pick_sfx(role: str):
+        def pick_sfx(role: str, max_dur: float | None = None):
             pool = sfx_pool.get(role) or (sfx_pool.get("whoosh") if role == "swoosh-text" else None) \
                 or (sfx_pool.get("pop") if role in ("ding", "click") else None)
+            if pool and max_dur:
+                pool = [e for e in pool if e["duration"] <= max_dur] or pool
             if not pool:
                 return None
             n = sfx_used.get(role, 0)
             sfx_used[role] = n + 1
             return pool[n % len(pool)]
+
+        # ---- spoken-word clock (for at_word) and face-aware layout
+        tl_words = []
+        for k, sh in enumerate(shots):
+            if sh["unit"]["kind"] != "speech":
+                continue
+            for w, a, b in _shot_words(cache, sh):
+                tl_words.append((norm(w), round(sh["start"] + a - sh["t0"], 3),
+                                 round(sh["start"] + b - sh["t0"], 3), k + 1))
+
+        def resolve(spec):
+            if "at" in spec:
+                return float(spec["at"]) + float(spec.get("offset", 0))
+            if "at_word" in spec:
+                want = norm(spec["at_word"])
+                hits = [w for w in tl_words if w[0] == want and ("shot" not in spec or w[3] == spec["shot"])]
+                if not hits:
+                    die(f"graphics: word '{spec['at_word']}' not found in the spoken words"
+                        f"{' of shot ' + str(spec['shot']) if 'shot' in spec else ''}")
+                h = hits[min(len(hits), int(spec.get("nth", 1))) - 1]
+                return (h[2] if spec.get("edge") == "end" else h[1]) + float(spec.get("offset", 0))
+            die(f"graphics: needs 'at' or 'at_word': {spec}")
+
+        def shot_end(t):
+            for sh in shots:
+                if sh["start"] - 0.01 <= t < sh["end"]:
+                    return sh["end"]
+            return body_end
+
+        def link_unit(gid):
+            u = units.get(gid)
+            if not u:
+                die(f"graphics: unknown unit '{gid}'")
+            src = Path(u["source"])
+            rel = f"assets/src/{u['alias']}{src.suffix.lower()}"
+            if not (hf / rel).exists():
+                link_or_copy(src, hf / rel)
+            return rel, round(u["t0"], 3)
+
+        def target_id(t):
+            if isinstance(t, str):
+                return t
+            return f"v{t['shot']}" + (f"c{t['cover']}" if t.get("cover") else "")
+
+
+        # face-aware layout: what is on screen at time t, and where its faces are on the canvas
+        segs = []  # topmost last: {"start","end","unit","src0","pos_x","zoom"} or {"blank": True}
+        tracks = {}
+        layout_notes = []
+
+        def track_of(u):
+            if u["cache"] not in tracks:
+                pr = u["probe"]
+                tracks[u["cache"]] = face_track(Path(u["source"]), cache / u["cache"], pr["duration"],
+                                                pr["width"], pr["height"])
+            return tracks[u["cache"]]
+
+        for g in plan.get("graphics", []):
+            if g.get("type") == "phone_reels":
+                t = resolve(g)
+                segs.append({"start": t, "end": t + float(g.get("dur", 1.5)), "blank": True})
+
+        def faces_at(ta, tb):
+            rects, t = [], ta
+            while t <= tb + 1e-6:
+                live = [sg for sg in segs if sg["start"] <= t < sg["end"]]
+                top = None if any(sg.get("blank") for sg in live) else                     (max(live, key=lambda sg: sg.get("layer", 0)) if live else None)
+                if top:
+                    u = top["unit"]
+                    pr = u["probe"]
+                    st = top["src0"] + (t - top["start"])
+                    sc = max(W / pr["width"], H / pr["height"])
+                    dw, dh = pr["width"] * sc, pr["height"] * sc
+                    ox, oy = (W - dw) * top["pos_x"], (H - dh) / 2
+                    z = top["zoom"]
+                    for x0, y0, x1, y1 in boxes_between(track_of(u), st, st):
+                        X0, Y0 = (ox + x0 * dw - W / 2) * z + W / 2, (oy + y0 * dh - H / 2) * z + H / 2
+                        X1, Y1 = (ox + x1 * dw - W / 2) * z + W / 2, (oy + y1 * dh - H / 2) * z + H / 2
+                        rects.append((X0, Y0, X1, Y1))
+                t += 0.25
+            return rects
+
+        def overlap(y, h, rects, x0=60, x1=W - 60, pad=24):
+            return sum(max(0, min(y + h + pad, r[3]) - max(y - pad, r[1])) *
+                       max(0, min(x1, r[2]) - max(x0, r[0])) for r in rects)
+
+        def fit_y(ta, tb, h, cands, x0=60, x1=W - 60):
+            rects = faces_at(ta, tb)
+            best = min(cands, key=lambda y: (overlap(y, h, rects, x0, x1) > 0, cands.index(y)))
+            return best
+
+        def check_y(name, ta, tb, y, h, x0=60, x1=W - 60):
+            if overlap(y, h, faces_at(ta, tb), x0, x1, pad=0) > 0:
+                layout_notes.append(f"{name} at {ta:.2f}-{tb:.2f}s (y {y}) overlaps a face")
+
+        def text_h(text, size, width=W - 120, lh=1.08, cw=0.66):
+            lines = max(1, -(-int(len(text) * size * cw) // width))
+            return int(lines * size * lh)
 
         for k, sh in enumerate(shots):
             u = sh["unit"]
@@ -235,6 +361,29 @@ def build(name: str) -> None:
                 f'data-media-start="{round(sh["t0"], 3)}" data-track-index="{k % 2}" {audio_attr}{auto} '
                 f'playsinline style="object-position:{pos_x * 100:.1f}% 50%"></video>')
             st, du = sh["start"], sh["dur"]
+            # b-roll covers: muted footage laid over this shot while its voice keeps playing
+            for j, cv in enumerate(sh["cover"]):
+                cu = cv["_u"]
+                cid = f"{vid}c{j + 1}"
+                cv["id"] = cid
+                c_at = _snap(st + float(cv.get("at", 0)), FPS)
+                c_end = _snap(min(st + float(cv.get("at", 0)) + float(cv["dur"]), sh["start"] + sh["dur"]), FPS)
+                c_in = round(float(cv.get("in", cu["t0"])), 3)
+                cv["start"], cv["end"], cv["t0"] = c_at, c_end, c_in
+                segs.append({"start": c_at, "end": c_end, "unit": cu, "src0": c_in, "layer": 1,
+                             "pos_x": cv.get("reframe_x", 0.5),
+                             "zoom": {"slow": 1.09, "punch": 1.18}.get(cv.get("zoom", "slow"), 1.0)})
+                cpos = cv.get("reframe_x", 0.5)
+                videos.append(
+                    f'<video id="{cid}" class="cover" src="{src_map[cu["alias"]]}" data-start="{c_at}" '
+                    f'data-duration="{round(c_end - c_at - 0.004, 4)}" data-media-start="{c_in}" '
+                    f'data-track-index="{5 + j % 2}" muted playsinline '
+                    f'style="object-position:{cpos * 100:.1f}% 50%"></video>')
+                cz = cv.get("zoom", "slow")
+                if cz == "slow":
+                    js.append(f'tl.fromTo("#{cid}", {{scale: 1.02}}, {{scale: 1.09, duration: {round(c_end - c_at, 3)}, ease: "none"}}, {c_at});')
+                elif cz == "punch":
+                    js.append(f'tl.fromTo("#{cid}", {{scale: 1.3}}, {{scale: 1.18, duration: 0.3, ease: "power3.out"}}, {c_at});')
             # zoom treatment for the whole shot
             scale = 1.0
             if sh["zoom"] == "punch":
@@ -243,6 +392,8 @@ def build(name: str) -> None:
             elif sh["zoom"] == "slow":
                 scale = 1.06
                 js.append(f'tl.fromTo("#{vid}", {{scale: 1}}, {{scale: 1.06, duration: {du}, ease: "none"}}, {st});')
+            segs.insert(0, {"start": st, "end": st + du, "unit": u, "src0": sh["t0"], "layer": 0,
+                            "pos_x": pos_x, "zoom": scale})
             # transition into this shot
             tr = sh["transition"]
             if k and tr == "crossfade":
@@ -263,18 +414,21 @@ def build(name: str) -> None:
             # captions
             if sh["caption"] and u["kind"] == "speech":
                 y = cap["y_normal"]
-                if face:
-                    fb = (face["bottom"] * H - H / 2) * scale + H / 2
-                    if fb + 40 > cap["y_normal"]:
-                        y = cap["y_low"] if fb + 40 <= cap["y_low"] else cap["y_top"]
-                sh["caption_y"] = y
+                spots = [cap["y_normal"], cap["y_low"], cap["y_top"], 1480]
                 for c in _chunks(_words(cache, u), sh, cap["max_words"], FPS):
                     cid = f"cap{len(caps) + 1}"
+                    ch = text_h(" ".join(c["words"]), cap["size"])
+                    y = fit_y(c["start"], c["start"] + c["dur"], ch, [y] + [v for v in spots if v != y])
+                    check_y(f"caption '{' '.join(c['words'])[:24]}'", c["start"], c["start"] + c["dur"], y, ch)
+                    sh["caption_y"] = sh.get("caption_y") or y
                     spans = []
-                    for w in c["words"]:
+                    for wi, w in enumerate(c["words"]):
                         clean = re.sub(r"[\.,!?;:\"]+$", "", w).strip()
-                        cls = ' class="acc"' if clean.lower().strip("'\"") in sh["emphasis"] else ""
-                        spans.append(f"<span{cls}>{html.escape(clean)}</span>")
+                        classes = (["acc"] if clean.lower().strip("'\"") in sh["emphasis"] else []) +                                   (["w"] if cap.get("active_word") else [])
+                        cls = f' class="{" ".join(classes)}"' if classes else ""
+                        spans.append(f'<span id="{cid}w{wi}"{cls}>{html.escape(clean)}</span>')
+                        if cap.get("active_word") and wi:
+                            js.append(f'tl.to("#{cid}w{wi}", {{opacity: 1, duration: 0.08, ease: "none"}}, {c["times"][wi]});')
                     caps.append(f'<div id="{cid}" class="cap clip" data-start="{c["start"]}" '
                                 f'data-duration="{c["dur"]}" data-track-index="3" style="top:{y}px">'
                                 + " ".join(spans) + "</div>")
@@ -293,14 +447,29 @@ def build(name: str) -> None:
         for n, t in enumerate(texts):
             tid = f"txt{n + 1}"
             at, du = _snap(float(t["at"]), FPS), _snap(float(t.get("dur", 1.6)), FPS)
-            y = t.get("y", kin["y"])
+            kh = text_h(t["text"], kin["size"], lh=1.0, cw=0.5)
+            if "y" in t:
+                y = t["y"]
+                check_y(f"text '{t['text']}'", at, at + du, y, kh)
+            else:
+                y = fit_y(at, at + du, kh, [kin["y"], 300, 1480])
             overlays.append(f'<div id="{tid}" class="kin clip" data-start="{at}" data-duration="{round(du - 0.004, 4)}" '
-                            f'data-track-index="4" style="top:{y}px">{html.escape(t["text"])}</div>')
+                            f'data-track-index="4" style="top:{y}px;{("color:" + t["color"] + ";") if t.get("color") else ""}">'
+                            f'{html.escape(t["text"])}</div>')
             js.append(f'tl.from("#{tid}", {{yPercent: 60, opacity: 0, duration: 0.28, ease: "power3.out"}}, {at});')
             role = t.get("sfx", "swoosh-text")
             if role and role != "none":
                 sfx_events.append({"at": at, "role": role, "align": "end" if role == "riser" and at > 2 else "start",
                                    "why": f"text '{t['text'][:24]}'"})
+
+        if plan.get("graphics"):
+            res = render_blocks(plan["graphics"], {
+                "snap": lambda t: _snap(t, FPS), "resolve": resolve, "shot_end": shot_end,
+                "body_end": body_end, "link_unit": link_unit, "target_id": target_id, "brand": brand,
+                "cap_shadow": cap.get("shadow", "none"), "fit_y": fit_y, "check_y": check_y})
+            overlays += res["html"]
+            js += res["js"]
+            sfx_events += res["sfx"]
 
         # outro elements
         if outro:
@@ -347,13 +516,16 @@ def build(name: str) -> None:
         sfx_spec = plan.get("sfx", "auto")
         events = sfx_events if sfx_spec == "auto" else ([] if sfx_spec in ("none", None) else sfx_spec)
         placed = []
+        sfx_track_end: dict[int, float] = {}
         for n, ev in enumerate(events):
             e = None
             if "file" in ev:
                 e = next((x for v in sfx_pool.values() for x in v if x["file"].endswith(ev["file"])), None)
             else:
-                e = pick_sfx(ev["role"])
+                e = pick_sfx(ev["role"], ev.get("max_dur"))
             if not e:
+                continue
+            if any(abs(float(ev["at"]) - x["hit"]) < 0.15 for x in placed):
                 continue
             at = float(ev["at"])
             if ev.get("align") == "peak":
@@ -364,8 +536,11 @@ def build(name: str) -> None:
             sid = f"sfx{n + 1}"
             rel = f"assets/sfx/{e['role']}-{slug(Path(e['file']).stem)}{Path(e['file']).suffix.lower()}"
             link_or_copy(path_of("library") / e["file"], hf / rel)
-            audios.append(f'<audio id="{sid}" src="{rel}" data-start="{at}" data-duration="{_snap(e["duration"], FPS) or 0.5}" '
-                          f'data-volume="{ev.get("volume", aud["sfx_volume"])}" data-track-index="{11 + n % 4}"></audio>')
+            sdur = _snap(e["duration"], FPS) or 0.5
+            trk = next(t for t in range(11, 40) if sfx_track_end.get(t, -1) <= at)
+            sfx_track_end[trk] = at + sdur
+            audios.append(f'<audio id="{sid}" src="{rel}" data-start="{at}" data-duration="{sdur}" '
+                          f'data-volume="{ev.get("volume", aud["sfx_volume"])}" data-track-index="{trk}"></audio>')
             placed.append({"at": at, "hit": round(float(ev["at"]), 3), "role": e["role"], "file": e["file"],
                            "why": ev.get("why", "")})
             credits.append(e)
@@ -393,9 +568,13 @@ def build(name: str) -> None:
                .replace("{{CAPTIONS}}", "\n        ".join(caps))
                .replace("{{AUDIO}}", "\n      ".join(audios))
                .replace("{{JS}}", "\n      ".join(js))
+               .replace("{{BLOCK_CSS}}", block_css(brand))
                .replace("{{CUSTOM_CSS}}", custom["css"]).replace("{{CUSTOM_HTML}}", custom["html"])
                .replace("{{CUSTOM_JS}}", custom["js"]))
         (hf / "index.html").write_text(out, encoding="utf-8")
+        stale = hf / "render.html"  # left by a previous render; regenerated by the next one
+        if stale.exists():
+            stale.unlink()
 
         # ---- timeline + beat sheet + credits
         timeline = {"duration": total, "fps": FPS, "body_end": body_end,
@@ -403,7 +582,10 @@ def build(name: str) -> None:
                                "end": s["end"], "src": [round(s["t0"], 3), round(s["t1"], 3)],
                                "transition": s["transition"], "zoom": s["zoom"],
                                "caption_y": s.get("caption_y"), "captions": s.get("captions", []),
-                               "desc": s["unit"].get("desc") or s["unit"].get("text", "")[:80]}
+                               "desc": s["unit"].get("desc") or s["unit"].get("text", "")[:80],
+                               "covers": [{"id": c["id"], "unit": c["_u"]["gid"], "start": c["start"], "end": c["end"],
+                                           "src": c["t0"], "desc": (c["_u"].get("desc") or "")[:60]}
+                                          for c in s["cover"]]}
                               for s in shots],
                     "texts": texts, "sfx": placed,
                     "music": {"file": m_entry["file"], "start": music.get("start", 0)} if m_entry else None,
@@ -412,6 +594,8 @@ def build(name: str) -> None:
         write_json(d / "timeline.json", timeline)
         _beatsheet(d, timeline, m_entry)
         _credits(d, credits)
+        for note in layout_notes:
+            info(f"  LAYOUT: {note}")
         info(f"Built {hf / 'index.html'}  ({len(shots)} shots, {total:.1f}s, {len(placed)} sfx, "
              f"{len(caps)} caption chunks)")
         res = npx_hf(["lint", "."], cwd=hf, check=False)
@@ -433,14 +617,48 @@ def _words(cache: Path, u: dict) -> list:
     return _WORDS_CACHE[key]
 
 
+def _aligned(cache: Path, sh: dict):
+    """Exact word times from `aes align` for this shot's caption_text, or None."""
+    text = sh.get("caption_text")
+    if not text:
+        return None
+    f = cache / sh["unit"]["cache"] / "align.json"
+    if not f.exists():
+        return None
+    from .align import align_key
+    data = read_json(f)
+    return data.get(align_key(sh["key_t"][0], sh["key_t"][1], text))
+
+
+def _shot_words(cache: Path, sh: dict) -> list:
+    """(word, src_start, src_end) spoken in this shot; caption_text replaces the words 1:1 when counts match."""
+    al = _aligned(cache, sh)
+    if al:
+        return [(w, a, b) for w, a, b in al]
+    t0, t1 = sh["t0"], sh["t1"]
+    ws = [w for w in _words(cache, sh["unit"]) if t0 - 0.02 <= (w[1] + w[2]) / 2 <= t1 + 0.02 and w[0]]
+    ov = (sh.get("caption_text") or "").split()
+    if ov and len(ov) == len(ws):
+        return [(n, w[1], w[2]) for n, w in zip(ov, ws)]
+    return [(w[0], w[1], w[2]) for w in ws]
+
+
 def _chunks(words: list, sh: dict, max_words: int, fps: float) -> list[dict]:
     t0, t1, st = sh["t0"], sh["t1"], sh["start"]
     ws = [w for w in words if t0 - 0.02 <= (w[1] + w[2]) / 2 <= t1 + 0.02 and w[0]]
     override = sh.get("caption_text")
+    new = None
+    al = _aligned(path_of("cache"), sh)
+    if al:
+        ws, override = [[w, a, b, 1.0] for w, a, b in al], None
     if override and ws:
         # Re-time the editor's text (e.g. romanized Hindi/Urdu, a spelling fix) over the spoken timings
         # spread the new words over the spoken span, in proportion to their length
         new = override.split()
+        if len(new) == len(ws):  # same word count: keep the real per-word timings
+            ws = [[n] + list(w[1:]) for n, w in zip(new, ws)]
+            new = None
+    if override and ws and new:
         a, b = ws[0][1], ws[-1][2]
         weights = [len(w) + 2 for w in new]
         tot, acc, timed = sum(weights), 0, []
@@ -469,7 +687,8 @@ def _chunks(words: list, sh: dict, max_words: int, fps: float) -> list[dict]:
         end = min(end, shot_end)
         if end - a < 0.1:
             continue
-        out.append({"start": a, "dur": round(end - a - 0.004, 4), "words": [w[0] for w in g]})
+        out.append({"start": a, "dur": round(end - a - 0.004, 4), "words": [w[0] for w in g],
+                    "times": [max(a, _snap(st + max(0.0, w[1] - t0), fps)) for w in g]})
     return out
 
 
@@ -504,6 +723,8 @@ def _beatsheet(d: Path, tl: dict, m_entry) -> None:
         caps = " / ".join(s["captions"])[:90]
         L.append(f"| {s['n']} | {fmt_t(s['start'])}-{fmt_t(s['end'])} | {s['unit']} | {s['desc'][:60]} | "
                  f"{caps} | {s['transition']}{' +' + s['zoom'] if s['zoom'] != 'none' else ''} | {sfx or '-'} |")
+        for c in s.get("covers", []):
+            L.append(f"|  | {fmt_t(c['start'])}-{fmt_t(c['end'])} | cover {c['unit']} | {c['desc']} | (voice continues) |  |  |")
     if tl["texts"]:
         L += ["", "Texts: " + "; ".join(f"{t['at']}s '{t['text']}'" for t in tl["texts"])]
     if m_entry:

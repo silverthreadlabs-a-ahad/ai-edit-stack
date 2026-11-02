@@ -276,43 +276,53 @@ def cache_dir_for(src: Path) -> Path:
     return path_of("cache") / f"{src.stem[:40]}-{file_key(src)}"
 
 
-def analyze_file(src: Path, cfg: dict, transcriber: Transcriber, force: bool = False) -> Path:
-    import cv2
+def _prepare(src: Path, cfg: dict, transcriber: Transcriber, force: bool = False):
+    """Stage 1 (GPU, one clip at a time): cache check, probe, transcript. Returns None when cached."""
     cdir = cache_dir_for(src)
     afile = cdir / "analysis.json"
     if afile.exists() and not force:
         a = read_json(afile)
         if a.get("version") == ANALYSIS_VERSION:
             info(f"  cached: {src.name}")
-            return cdir
+            return None
     info(f"  analyzing: {src.name}")
     pr = ffprobe(src)
     if not pr.get("has_video"):
         info(f"  skipped (no video stream): {src.name}")
-        return cdir
-    aspect = pr["width"] / pr["height"]
+        return None
     cdir.mkdir(parents=True, exist_ok=True)
-
     tfile = cdir / "transcript.json"
     if tfile.exists() and not force:
         tr = read_json(tfile)
     else:
-        tr = transcriber.transcribe(decode_audio(src)) if pr["has_audio"] else \
-            {"language": None, "words": [], "segments": []}
+        tr = transcriber.transcribe(decode_audio(src)) if pr["has_audio"] else             {"language": None, "words": [], "segments": []}
         write_json(tfile, tr, compact=True)
-    info(f"    transcript: {len(tr['words'])} words ({tr.get('device', '-')})")
+    info(f"    {src.name}: transcript {len(tr['words'])} words ({tr.get('device', '-')})")
+    return src, cdir, pr, tr
 
+
+def _finish(src: Path, cdir: Path, pr: dict, tr: dict, cfg: dict) -> Path:
+    """Stage 2 (CPU): scenes, units, quality scores, contact sheets, face track."""
+    import cv2
+    from .faces import face_track
+    aspect = pr["width"] / pr["height"]
     scenes = detect_scenes(src, pr["duration"], pr.get("fps", 30), cfg)
-    info(f"    scenes: {len(scenes)}")
     units = build_units(scenes, tr, pr["duration"], cfg)
     cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
     with ThreadPoolExecutor(max_workers=4) as ex:
         list(ex.map(lambda u: score_unit(src, u, aspect, cdir / "sheets", cascade, cfg), units))
-    info(f"    units: {len(units)} ({sum(u['kind'] == 'speech' for u in units)} speech)")
-    write_json(afile, {"version": ANALYSIS_VERSION, "source": str(src.resolve()), "name": src.name,
-                       "probe": pr, "language": tr.get("language"), "scenes": scenes,
-                       "units": units})
+    face_track(src, cdir, pr["duration"], pr["width"], pr["height"])
+    info(f"    {src.name}: {len(scenes)} scenes, {len(units)} units "
+         f"({sum(u['kind'] == 'speech' for u in units)} speech)")
+    write_json(cdir / "analysis.json", {"version": ANALYSIS_VERSION, "source": str(src.resolve()),
+                                        "name": src.name, "probe": pr, "language": tr.get("language"),
+                                        "scenes": scenes, "units": units})
     return cdir
+
+
+def analyze_file(src: Path, cfg: dict, transcriber: Transcriber, force: bool = False) -> Path:
+    prep = _prepare(src, cfg, transcriber, force)
+    return _finish(*prep, cfg) if prep else cache_dir_for(src)
 
 
 def list_sources(folder: Path) -> list[Path]:
@@ -326,7 +336,27 @@ def list_sources(folder: Path) -> list[Path]:
     return files
 
 
-def analyze_sources(sources: list[Path], force: bool = False) -> list[Path]:
+def analyze_sources(sources: list[Path], force: bool = False, language: str | None = None) -> list[Path]:
+    """Pipelined: the GPU transcribes clip N+1 while the CPU scores clip N (2 scoring workers)."""
+    from .faces import face_track
     cfg = load_config()
+    if language:  # pin the language: large-v3-turbo translates to English when it guesses "en"
+        cfg["whisper"]["language"] = language
     tr = Transcriber(cfg)
-    return [analyze_file(s, cfg, tr, force=force) for s in sources]
+    out: list = [None] * len(sources)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        futs = {}
+        for i, s in enumerate(sources):
+            prep = _prepare(s, cfg, tr, force)
+            if prep:
+                futs[i] = pool.submit(_finish, *prep, cfg)
+            else:
+                cdir = cache_dir_for(s)
+                out[i] = cdir
+                if (cdir / "analysis.json").exists() and not (cdir / "faces.json").exists():
+                    a = read_json(cdir / "analysis.json")
+                    futs[i] = pool.submit(lambda s=s, c=cdir, p=a["probe"]:
+                                          (face_track(s, c, p["duration"], p["width"], p["height"]), c)[1])
+        for i, f in futs.items():
+            out[i] = f.result()
+    return out
