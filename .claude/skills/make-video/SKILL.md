@@ -18,25 +18,32 @@ animation), `premium` (more candidates, full custom animation). Respect each mod
 ## 1. Analyze (scripts only, 0 tokens)
 `.\aes.cmd analyze <name>` -> cached per clip; writes `candidates.md`.
 
-## 2. Describe b-roll (cheap model)
+## 2. Describe b-roll (local first, then a cheap model)
+`.\aes.cmd vision <name>` tags and embeds every b-roll unit on the GPU (0 tokens). With the default
+`describe.engine = "hybrid"`, only the best `haiku_top` clips still go to Haiku; local tags cover the rest.
 `.\aes.cmd describe <name> --pending` -> `describe_pending.json`.
-If it lists any units, spawn the `clip-describer` subagent with the project name. It writes
+It lists one unit per one-scene clip (not every unit). If it lists any units, spawn the `clip-describer`
+subagent with the project name (if that agent type is missing, use a general-purpose agent with model haiku
+and the instructions from `.claude/agents/clip-describer.md`). For more than ~30 units, split the list across 2 agents. It writes
 `describe_out.json` and applies it. Do NOT view the sheets yourself.
 
 ## 3. Plan the edit
 Read `candidates.md` (only). Then:
 1. Story: hook (strongest line or visual) -> problem/value -> proof -> CTA last. Fit the brief's length.
 2. Pick units by `q` and flags; use later takes of retakes; skip filler-heavy units or trim them.
+   For b-roll over a voiceover, rank shots per phrase: `.\aes.cmd match <name> "two models walking" "dark blurry fabric"`.
 3. Music: `.\aes.cmd library suggest --mood "<mood words>" --min-dur <video length+5>` (and `--energy`,
    `--bpm`). Pick one. Start at its `drop` if the hook needs energy, else 0.
    `.\aes.cmd library roles` shows which SFX roles exist (auto SFX skips missing roles).
 4. Write `projects/<name>/plan.json` per `docs/PLAN_SCHEMA.md`: shots, transitions (2-3 types max),
    zooms, emphasis words, hook, texts, music, `"sfx": "auto"`.
-5. `.\aes.cmd build <name>` -> fix any lint *errors* it prints (warnings are fine).
+5. If shots use romanized `caption_text`: `.\aes.cmd align <name>` (exact word times).
+   Then `.\aes.cmd build <name>` -> fix lint *errors* and every `LAYOUT:` line (warnings are fine).
 6. If mode has `beat_sheet_stop`: show the user `beatsheet.md` (paste its table) and wait for an OK or
    changes. In `quick` mode, continue.
 
-## 4. Custom animation (standard: light, premium: full, quick: none)
+## 4. Graphics (standard: light, premium: full, quick: none)
+Use `graphics[]` blocks in plan.json first (see docs/PLAN_SCHEMA.md), timed with `at_word`. Only if no block fits:
 Only if the brief or brand rules call for graphics beyond captions and kinetic text. Follow
 `docs/HYPERFRAMES_GUIDE.md`: registry blocks first, write between CUSTOM markers only, then rebuild.
 

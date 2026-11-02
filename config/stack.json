@@ -12,7 +12,7 @@
     "npx_package": "hyperframes@0.9.1"
   },
   "whisper": {
-    "model": "medium",
+    "model": "large-v3-turbo",
     "model_cpu": "small",
     "device": "auto",
     "compute_type_gpu": "float16",
@@ -30,7 +30,17 @@
     "sharp_min": 25,
     "bright_min": 35,
     "bright_max": 225,
-    "filler_words": ["um", "uh", "erm", "uhm", "hmm", "ah", "eh", "umm", "uhh"],
+    "filler_words": [
+      "um",
+      "uh",
+      "erm",
+      "uhm",
+      "hmm",
+      "ah",
+      "eh",
+      "umm",
+      "uhh"
+    ],
     "retake_similarity": 0.72
   },
   "modes": {
@@ -43,7 +53,7 @@
       "framesheet_max_frames": 9
     },
     "standard": {
-      "max_broll_candidates": 25,
+      "max_broll_candidates": 40,
       "describe_speech_units": false,
       "beat_sheet_stop": true,
       "review_passes": 2,
@@ -68,5 +78,9 @@
     "use_nvenc": true,
     "precut_crf": 16,
     "default_quality": "delivery"
+  },
+  "describe": {
+    "engine": "hybrid",
+    "haiku_top": 15
   }
 }

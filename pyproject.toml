@@ -21,6 +21,17 @@ gpu = [
     "nvidia-cudnn-cu12>=9,<10",
 ]
 
+# Local vision (SigLIP tags + clip matching) and forced alignment (torchaudio MMS_FA). Runs in its own
+# process (aes vision / aes align) so its CUDA libraries never meet faster-whisper's.
+ml = [
+    "torch==2.8.0",
+    "torchaudio==2.8.0",
+    "transformers>=4.46,<5",
+    "sentencepiece>=0.2",
+    "protobuf>=4",
+    "uroman>=1.3",
+]
+
 [project.scripts]
 aes = "aes.cli:main"
 
@@ -30,3 +41,12 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["aes"]
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu128" }
+torchaudio = { index = "pytorch-cu128" }
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true

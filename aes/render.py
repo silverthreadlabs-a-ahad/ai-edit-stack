@@ -49,16 +49,33 @@ def enhanced_voice(src: Path, cache_name: str) -> Path | None:
     return out
 
 
+RES = {"portrait-4k": (2160, 3840), "portrait": (1080, 1920), "landscape-4k": (3840, 2160),
+       "landscape": (1920, 1080), "square": (1080, 1080)}
+
+
 def _precut(job: dict, nvenc: bool, crf: int) -> str:
+    """Cut one shot: all-intra (fast seeking in the 4K render), conformed to the canvas fps,
+    lanczos-scaled to the delivery size, with 10 ms audio fades so cuts never click."""
+    gop = ["-g", "1"]
     vcodec = (["-c:v", "h264_nvenc", "-preset", "p5", "-rc", "vbr", "-cq", str(crf), "-b:v", "0"]
-              if nvenc else ["-c:v", "libx264", "-preset", "fast", "-crf", str(crf)])
+              if nvenc else ["-c:v", "libx264", "-preset", "fast", "-crf", str(crf)]) + gop
     cmd = ["ffmpeg", "-v", "error", "-y", "-ss", f"{job['t0']:.3f}", "-i", job["src"]]
     if job.get("voice"):
         cmd += ["-ss", f"{job['t0']:.3f}", "-i", job["voice"], "-map", "0:v:0", "-map", "1:a:0"]
     else:
         cmd += ["-map", "0:v:0", "-map", "0:a:0?"]
-    cmd += ["-t", f"{job['dur'] + 0.05:.3f}"] + vcodec + ["-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k",
-                                                          "-movflags", "+faststart", job["out"]]
+    vf = []
+    if job.get("size"):
+        w, h = job["size"]
+        vf.append(f"scale={w}:{h}:force_original_aspect_ratio=increase:flags=lanczos,crop={w}:{h}")
+    if job.get("fps"):
+        vf.append(f"fps={job['fps']}")
+    if vf:
+        cmd += ["-vf", ",".join(vf)]
+    d = job["dur"] + 0.05
+    cmd += ["-af", f"afade=t=in:d=0.01,afade=t=out:st={max(0.0, d - 0.01):.3f}:d=0.01"]
+    cmd += ["-t", f"{d:.3f}"] + vcodec + ["-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k",
+                                          "-movflags", "+faststart", job["out"]]
     run(cmd)
     pr = ffprobe(Path(job["out"]))
     if not pr.get("has_video"):
@@ -122,6 +139,14 @@ def render(name: str, quality: str = "final", precut: bool = True) -> Path:
                     voice = str(vp) if vp else None
                 jobs.append({"id": s["id"], "src": c["source"], "voice": voice, "t0": s["src"][0],
                              "dur": s["end"] - s["start"], "out": str(hf / "assets" / "clips" / f"{s['id']}.mp4")})
+            for s in tl["shots"]:
+                for cv in s.get("covers", []):
+                    c = units[cv["unit"].split("-")[0]]
+                    jobs.append({"id": cv["id"], "src": c["source"], "voice": None, "t0": cv["src"],
+                                 "dur": cv["end"] - cv["start"], "out": str(hf / "assets" / "clips" / f"{cv['id']}.mp4")})
+            size = RES.get(brand.get("render_resolution", ""))
+            for j in jobs:
+                j["size"], j["fps"] = size, brand["canvas"]["fps"]
             (hf / "assets" / "clips").mkdir(parents=True, exist_ok=True)
             with ThreadPoolExecutor(max_workers=cfg["limits"]["parallel_encodes"]) as ex:
                 list(ex.map(lambda j: _precut(j, nvenc, cfg["render"]["precut_crf"]), jobs))

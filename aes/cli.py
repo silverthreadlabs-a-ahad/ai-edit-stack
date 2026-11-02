@@ -69,6 +69,15 @@ def main(argv: list[str] | None = None) -> None:
     s.add_argument("--top", type=int, default=6)
     lsub.add_parser("roles")
 
+    vi = sub.add_parser("vision", help="SigLIP tags + embeddings for b-roll (local, 0 tokens; needs the ml extra)")
+    vi.add_argument("name")
+    vi.add_argument("--force", action="store_true")
+    ma = sub.add_parser("match", help="rank b-roll units for phrases (English/Hindi/Urdu)")
+    ma.add_argument("name")
+    ma.add_argument("phrases", nargs="+")
+    ma.add_argument("--top", type=int, default=5)
+    al = sub.add_parser("align", help="forced-align romanized caption_text to the audio (exact word times)")
+    al.add_argument("name")
     sub.add_parser("build").add_argument("name")
     fs = sub.add_parser("framesheet")
     fs.add_argument("name")
@@ -108,6 +117,15 @@ def main(argv: list[str] | None = None) -> None:
             L.suggest_music(args.mood, args.min_dur, args.energy, args.bpm, args.top)
         else:
             L.sfx_roles_summary()
+    elif c == "vision":
+        from .vision import vision
+        vision(args.name, force=args.force)
+    elif c == "match":
+        from .vision import match
+        match(args.name, args.phrases, args.top)
+    elif c == "align":
+        from .align import align
+        align(args.name)
     elif c == "build":
         from .build import build
         build(args.name)
